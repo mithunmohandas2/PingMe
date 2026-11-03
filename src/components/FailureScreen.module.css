@@ -1,0 +1,205 @@
+.screen {
+  --failure-page: #f4f7ff;
+  --failure-card: #ffffffed;
+  --failure-ink: #192a45;
+  --failure-muted: #667892;
+  --failure-line: #dfe7f4;
+  --failure-accent: #2563eb;
+  min-height: 100dvh;
+  box-sizing: border-box;
+  padding: 100px 24px 36px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  background:
+    radial-gradient(ellipse at 15% 15%, #73a6ff26, transparent 55%),
+    radial-gradient(ellipse at 90% 90%, #a99bff20, transparent 50%),
+    url("/images/auth-connections.svg") center/cover,
+    var(--failure-page);
+  color: var(--failure-ink);
+  font-family:
+    "Poppins",
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  text-align: center;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: inherit;
+  font-size: 21px;
+  font-weight: 800;
+  text-decoration: none;
+  letter-spacing: -0.7px;
+}
+.brandIcon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  background: #2563eb;
+  color: #fff;
+  border-radius: 14px;
+  box-shadow: 0 8px 24px #2563eb25;
+}
+.card {
+  box-sizing: border-box;
+  max-width: 550px;
+  width: 100%;
+  padding: 42px 38px;
+  background: var(--failure-card);
+  border: 1px solid var(--failure-line);
+  border-radius: 28px;
+  box-shadow: 0 24px 80px #142d5710;
+}
+.illustration {
+  position: relative;
+  width: 110px;
+  height: 110px;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 28px;
+  background: #2563eb12;
+  color: var(--failure-accent);
+  border-radius: 35px;
+  transform: rotate(-6deg);
+}
+.illustration span {
+  position: absolute;
+  right: -5px;
+  top: -4px;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: #2563eb;
+  border: 4px solid var(--failure-card);
+  border-radius: 50%;
+  font-size: 17px;
+  font-weight: 800;
+}
+.code {
+  margin: 0 0 14px;
+  color: var(--failure-accent);
+  font-weight: 800;
+  font-size: 11px;
+  letter-spacing: 1.8px;
+}
+.card h1 {
+  margin: 0;
+  font-size: clamp(26px, 5vw, 34px);
+  line-height: 1.2;
+  letter-spacing: -1.1px;
+  text-wrap: balance;
+}
+.description {
+  color: var(--failure-muted);
+  font-size: 14px;
+  line-height: 1.8;
+  margin: 20px 0 28px;
+}
+.actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.primary,
+.secondary {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 46px;
+  padding: 13px 19px;
+  border-radius: 12px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+.primary {
+  color: #fff;
+  background: #2563eb;
+  border: 1px solid #2563eb;
+}
+.secondary {
+  color: var(--failure-ink);
+  background: transparent;
+  border: 1px solid var(--failure-line);
+}
+.primary:hover {
+  background: #1d4ed8;
+}
+.secondary:hover {
+  background: #2563eb0d;
+}
+.homeLink {
+  display: inline-block;
+  margin-top: 24px;
+  color: var(--failure-accent);
+  font-size: 13px;
+  text-underline-offset: 4px;
+}
+.footer {
+  margin: 0;
+  color: var(--failure-muted);
+  font-size: 12px;
+}
+.screen a:focus-visible,
+.screen button:focus-visible {
+  outline: 3px solid var(--failure-accent);
+  outline-offset: 4px;
+}
+@media (prefers-color-scheme: dark) {
+  .screen {
+    --failure-page: #0b1220;
+    --failure-card: #111e32f5;
+    --failure-ink: #e3ebfb;
+    --failure-muted: #9daec6;
+    --failure-line: #2b3b53;
+    --failure-accent: #8ab4ff;
+  }
+}
+:global(html[data-theme="dark"]) .screen {
+  --failure-page: #0b1220;
+  --failure-card: #111e32f5;
+  --failure-ink: #e3ebfb;
+  --failure-muted: #9daec6;
+  --failure-line: #2b3b53;
+  --failure-accent: #8ab4ff;
+}
+:global(html[data-theme="light"]) .screen {
+  --failure-page: #f4f7ff;
+  --failure-card: #ffffffed;
+  --failure-ink: #192a45;
+  --failure-muted: #667892;
+  --failure-line: #dfe7f4;
+  --failure-accent: #2563eb;
+}
+@media (max-width: 480px) {
+  .screen {
+    padding: 100px 18px 30px;
+    gap: 24px;
+  }
+  .card {
+    padding: 32px 22px;
+    border-radius: 22px;
+  }
+  .actions {
+    flex-direction: column;
+  }
+  .primary,
+  .secondary {
+    width: 100%;
+  }
+}

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1100" viewBox="0 0 1440 1100" fill="none">
+  <defs>
+    <pattern id="dots" width="34" height="34" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#93b6f5" fill-opacity=".3"/></pattern>
+    <linearGradient id="line" x1="80" y1="150" x2="1250" y2="980" gradientUnits="userSpaceOnUse"><stop stop-color="#79adff" stop-opacity=".1"/><stop offset=".5" stop-color="#79adff" stop-opacity=".65"/><stop offset="1" stop-color="#a6a0ff" stop-opacity=".1"/></linearGradient>
+  </defs>
+  <path fill="url(#dots)" d="M0 0h1440v1100H0z"/>
+  <g stroke="url(#line)" stroke-width="1.5">
+    <path d="M-90 860C180 530 310 1060 600 710S1120 300 1510 500"/>
+    <path d="M-60 905C210 575 350 1100 640 755S1160 345 1550 545" opacity=".45"/>
+    <path d="M-100 270C220 450 270 40 590 240S1100 600 1500 100"/>
+    <circle cx="150" cy="850" r="220" opacity=".35"/><circle cx="150" cy="850" r="270" opacity=".25"/>
+    <circle cx="1220" cy="180" r="240" opacity=".35"/><circle cx="1220" cy="180" r="290" opacity=".25"/>
+  </g>
+  <g fill="#9dc3ff"><circle cx="590" cy="240" r="5"/><circle cx="600" cy="710" r="6"/><circle cx="1150" cy="410" r="4"/><circle cx="180" cy="675" r="4"/></g>
+  <g stroke="#a3c6ff" stroke-opacity=".35" stroke-width="2">
+    <g transform="translate(88 155) rotate(-12)"><rect width="76" height="54" rx="16"/><path d="m18 54-5 13 23-13M21 23h34M21 34h22" stroke-linecap="round"/></g>
+    <g transform="translate(1170 805) rotate(12)"><rect width="96" height="66" rx="20"/><path d="m24 66-6 16 28-16M28 28h40M28 40h27" stroke-linecap="round"/></g>
+    <path d="m470 950 5 12 13 2-10 9 2 13-10-7-12 7 3-13-10-9 14-2z"/>
+    <path d="M1050 180v16m-8-8h16M280 470v16m-8-8h16" stroke-linecap="round"/>
+  </g>
+</svg>

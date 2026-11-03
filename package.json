@@ -1,0 +1,36 @@
+{
+  "name": "ping-me-messenger",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/chat-sync.test.cjs tests/profile.test.cjs"
+  },
+  "dependencies": {
+    "@fontsource/poppins": "^5.3.0",
+    "bcryptjs": "^3.0.2",
+    "ioredis": "^5.7.0",
+    "jose": "^6.0.0",
+    "jsqr": "^1.4.0",
+    "lucide-react": "^0.468.0",
+    "mongoose": "^8.18.0",
+    "next": "^15.5.0",
+    "qrcode": "^1.5.4",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "sharp": "^0.35.5",
+    "ws": "^8.18.3",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@types/ws": "^8.18.0",
+    "typescript": "^5.9.2"
+  }
+}
