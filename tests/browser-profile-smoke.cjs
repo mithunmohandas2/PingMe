@@ -525,19 +525,23 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     for (const [width, height] of [
       [320, 568],
       [390, 844],
+      [1024, 600],
+      [1280, 720],
+      [1366, 768],
+      [1920, 1080],
     ]) {
       await send("Emulation.setDeviceMetricsOverride", {
         width,
         height,
         deviceScaleFactor: 1,
-        mobile: true,
+        mobile: width <= 800,
       });
       await delay(100);
       for (const mode of ["login", "register"]) {
         if (mode === "register") await click(".authswitch button");
         const layout = await evaluate(`(()=>{
           const card=document.querySelector('.authcard').getBoundingClientRect(),controls=document.querySelector('.app-controls').getBoundingClientRect(),input=document.querySelector('.authcard input');
-          return {horizontalOverflow:document.documentElement.scrollWidth>innerWidth,cardHeight:card.height,cardBottom:card.bottom,controlsClear:card.top>=controls.bottom,inputSize:parseFloat(getComputedStyle(input).fontSize),tapHeight:input.getBoundingClientRect().height};
+          return {horizontalOverflow:document.documentElement.scrollWidth>innerWidth,cardHeight:card.height,cardBottom:card.bottom,controlsClear:card.top>=controls.bottom,inputSize:parseFloat(getComputedStyle(input).fontSize),tapHeight:input.getBoundingClientRect().height,documentHeight:document.documentElement.scrollHeight,headline:parseFloat(getComputedStyle(document.querySelector(".authhero h1")).fontSize)};
         })()`);
         assert.equal(
           layout.horizontalOverflow,
@@ -549,7 +553,21 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
           layout.cardBottom <= height,
           mode + " should fit screen: " + JSON.stringify(layout),
         );
-        assert.ok(layout.inputSize >= 16 && layout.tapHeight >= 44);
+        assert.ok(layout.tapHeight >= 44);
+        if (width <= 800) assert.ok(layout.inputSize >= 16);
+        else {
+          assert.ok(layout.headline <= 44);
+          assert.ok(
+            layout.documentHeight <= height,
+            mode +
+              " must not scroll at " +
+              width +
+              "x" +
+              height +
+              ": " +
+              JSON.stringify(layout),
+          );
+        }
       }
       await click(".authswitch button");
     }

@@ -82,6 +82,8 @@ a:focus-visible {
   margin: 24px 0 16px;
 }
 .authscreen {
+  min-height: 100dvh;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   background:
     radial-gradient(ellipse at 80% 10%, #b5cdff66, transparent 55%),
     radial-gradient(ellipse at 70% 95%, #c7c0ff55, transparent 50%), #f4f7ff;
@@ -97,6 +99,8 @@ a:focus-visible {
   z-index: -1;
 }
 .authhero {
+  min-width: 0;
+  padding: clamp(28px, 4vw, 64px);
   background:
     radial-gradient(ellipse at 15% 15%, #3272d655, transparent 65%),
     radial-gradient(ellipse at 100% 85%, #7963d955, transparent 65%),
@@ -123,25 +127,75 @@ a:focus-visible {
     0 0 0 55px #81adff06,
     0 0 0 110px #81adff04;
 }
+.authhero .brand {
+  top: 32px;
+  left: clamp(28px, 4vw, 64px);
+}
 .authhero h1 {
-  font-size: clamp(40px, 4.5vw, 68px);
+  font-size: clamp(30px, 3vw, 44px);
+  line-height: 1.2;
+  letter-spacing: -1.4px;
+  margin: 0 0 16px;
+}
+.authhero > p {
+  font-size: 14px;
+  line-height: 1.65;
+  margin: 0 0 4px;
+}
+.authhero .herobubble {
+  font-size: 13px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  margin-top: 22px;
+}
+.authhero .herobubble.b2 {
+  margin-top: 10px;
 }
 .authpane {
-  padding: 110px 32px 48px;
+  min-width: 0;
+  padding: 88px 28px 24px;
 }
 .authcard {
-  max-width: 450px;
-  padding: 36px;
+  max-width: 400px;
+  min-width: 0;
+  padding: 24px 28px;
   background: #ffffffd9;
   border: 1px solid #fff;
-  border-radius: 26px;
+  border-radius: 22px;
   box-shadow: 0 24px 80px #23497712;
   backdrop-filter: blur(18px);
 }
 .authcard h2 {
-  font-size: 32px;
+  font-size: 26px;
+  line-height: 1.25;
+  letter-spacing: -0.8px;
+  margin: 10px 0 6px;
 }
 .authcard > p {
+  font-size: 13px;
+  line-height: 1.55;
+  margin: 0 0 18px;
+}
+.authcard label {
+  font-size: 12px;
+  margin: 12px 0;
+}
+.authcard input {
+  min-height: 44px;
+  margin-top: 6px;
+  padding: 10px 13px;
+  font-size: 14px;
+  border-radius: 10px;
+}
+.authcard .primary {
+  min-height: 44px;
+  margin-top: 14px;
+  padding: 11px 16px;
+  font-size: 13px;
+}
+.authcard .authswitch {
+  margin-top: 18px;
+  font-size: 12px;
   line-height: 1.6;
 }
 .profile-trigger {
@@ -318,10 +372,31 @@ html[data-theme="dark"] input::placeholder {
     left: 40px;
   }
   .authcard {
-    padding: 28px;
+    padding: 24px;
   }
   .shell {
     grid-template-columns: 320px minmax(0, 1fr);
+  }
+}
+@media (min-width: 801px) and (max-height: 700px) {
+  .authpane {
+    padding: 80px 24px 16px;
+  }
+  .authcard {
+    padding: 20px 24px;
+  }
+  .authhero .brand {
+    top: 24px;
+  }
+  .authhero h1 {
+    font-size: clamp(28px, 3vw, 38px);
+  }
+  .authhero .herobubble {
+    margin-top: 16px;
+    padding: 10px 14px;
+  }
+  .authhero .herobubble.b2 {
+    margin-top: 8px;
   }
 }
 @media (max-width: 800px) {
@@ -347,6 +422,9 @@ html[data-theme="dark"] input::placeholder {
     gap: 3px;
     padding: 4px;
     border-radius: 16px;
+  }
+  .authscreen {
+    grid-template-columns: minmax(0, 1fr);
   }
   .authpane {
     display: flex;
@@ -471,7 +549,8 @@ html[data-theme="dark"] input::placeholder {
   justify-items: center;
   gap: 14px;
   padding: 32px;
-  background: radial-gradient(ellipse at center, #2563eb0c, transparent 65%), var(--page);
+  background:
+    radial-gradient(ellipse at center, #2563eb0c, transparent 65%), var(--page);
 }
 .opening-loader-symbol {
   position: relative;
@@ -497,15 +576,21 @@ html[data-theme="dark"] input::placeholder {
   opacity: 0;
   animation: pingme-ripple 2.8s ease-out infinite;
 }
-.opening-loader-ring.delayed { animation-delay: 1.4s; }
+.opening-loader-ring.delayed {
+  animation-delay: 1.4s;
+}
 .opening-loader-label {
   margin: 0;
   font-size: 14px;
   font-weight: 500;
   color: var(--ink);
-  animation: pingme-reveal .5s ease-out both;
+  animation: pingme-reveal 0.5s ease-out both;
 }
-.opening-loader-dots { display: flex; gap: 6px; padding: 2px 0; }
+.opening-loader-dots {
+  display: flex;
+  gap: 6px;
+  padding: 2px 0;
+}
 .opening-loader-dots span {
   width: 6px;
   height: 6px;
@@ -513,9 +598,20 @@ html[data-theme="dark"] input::placeholder {
   background: var(--accent);
   animation: pingme-bounce 1.2s ease-in-out infinite;
 }
-.opening-loader-dots span:nth-child(2) { animation-delay: .15s; }
-.opening-loader-dots span:nth-child(3) { animation-delay: .3s; }
-.opening-loader-track { width: 112px; height: 3px; overflow: hidden; border-radius: 8px; background: var(--line); margin-top: 8px; }
+.opening-loader-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.opening-loader-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+.opening-loader-track {
+  width: 112px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--line);
+  margin-top: 8px;
+}
 .opening-loader-track span {
   display: block;
   width: 40%;
@@ -524,11 +620,55 @@ html[data-theme="dark"] input::placeholder {
   background: var(--accent);
   animation: pingme-sweep 1.8s ease-in-out infinite;
 }
-@keyframes pingme-float { 0%, 100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(-7px) rotate(4deg); } }
-@keyframes pingme-ripple { 0% { transform: scale(.8); opacity: .35; } 100% { transform: scale(1.5); opacity: 0; } }
-@keyframes pingme-bounce { 0%, 60%, 100% { transform: translateY(0); opacity: .4; } 30% { transform: translateY(-5px); opacity: 1; } }
-@keyframes pingme-sweep { 0% { transform: translateX(-110%); } 100% { transform: translateX(360%); } }
-@keyframes pingme-reveal { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pingme-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-4deg);
+  }
+  50% {
+    transform: translateY(-7px) rotate(4deg);
+  }
+}
+@keyframes pingme-ripple {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.35;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+@keyframes pingme-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-5px);
+    opacity: 1;
+  }
+}
+@keyframes pingme-sweep {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(360%);
+  }
+}
+@keyframes pingme-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   *,
   *:before,
