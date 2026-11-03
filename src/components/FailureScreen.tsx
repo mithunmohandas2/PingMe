@@ -2,6 +2,7 @@
 
 import { Home, MessageCircle, RotateCw } from "lucide-react";
 import styles from "./FailureScreen.module.css";
+import AppLogo from "./AppLogo";
 
 export default function FailureScreen({
   kind,
@@ -15,7 +16,7 @@ export default function FailureScreen({
     <main className={styles.screen}>
       <a className={styles.brand} href="/" aria-label="Ping Me home">
         <span className={styles.brandIcon}>
-          <MessageCircle size={23} aria-hidden="true" />
+          <AppLogo />
         </span>
         Ping Me
       </a>

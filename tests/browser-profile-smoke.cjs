@@ -54,6 +54,7 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     chrome,
     [
       "--headless=new",
+      "--mute-audio",
       "--remote-debugging-port=0",
       "--user-data-dir=" + profile,
       "--no-first-run",
@@ -93,6 +94,9 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       exceptions = [],
       requests = [];
     let authenticated = true;
+    let latestChat = null,
+      failNextSend = false;
+    const chatMessages = [];
     function send(method, params = {}, sessionId = session) {
       return new Promise((resolve, reject) => {
         const id = ++sequence;
@@ -152,7 +156,7 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
         authenticated = true;
         data = user;
       } else if (url.pathname === "/api/chats" && request.method === "GET")
-        data = [];
+        data = latestChat ? [latestChat] : [];
       else if (url.pathname === "/api/profile/avatar") {
         user.image = request.method === "DELETE" ? "" : avatar;
         data = user;
@@ -172,14 +176,33 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
           message: "Password changed. Other sessions have been signed out.",
         };
       else if (url.pathname === "/api/users/" + target._id) data = target;
-      else if (url.pathname === "/api/chats" && request.method === "POST")
+      else if (url.pathname === "/api/chats" && request.method === "POST") {
         data = {
           _id: "507f1f77bcf86cd799439013",
           isGroup: false,
           users: [user, target],
           updatedAt: new Date().toISOString(),
         };
-      else if (url.pathname.startsWith("/api/messages/")) data = [];
+        latestChat = data;
+      } else if (
+        url.pathname === "/api/messages" &&
+        request.method === "POST"
+      ) {
+        if (failNextSend) {
+          failNextSend = false;
+        } else {
+          const values = JSON.parse(request.postData);
+          data = {
+            _id: "507f1f77bcf86cd799439021",
+            sender: user,
+            content: values.content,
+            createdAt: new Date().toISOString(),
+          };
+          chatMessages.push(data);
+          latestChat.latestMessage = data;
+          latestChat.updatedAt = data.createdAt;
+        }
+      } else if (url.pathname.startsWith("/api/messages/")) data = chatMessages;
       try {
         await send("Fetch.fulfillRequest", {
           requestId,
@@ -207,6 +230,18 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     await send("Page.enable");
     await send("Runtime.enable");
     await send("DOM.enable");
+    await send("Page.addScriptToEvaluateOnNewDocument", {
+      source: `
+      window.qaPlayedSounds = [];
+      const nativePlay = HTMLMediaElement.prototype.play;
+      HTMLMediaElement.prototype.play = function(...args) {
+        const source = this.src || "";
+        const audible = !this.muted && source.includes("/audio/");
+        const result = nativePlay.apply(this, args);
+        return Promise.resolve(result).then(() => { if (audible) window.qaPlayedSounds.push(new URL(source).pathname); });
+      };
+    `,
+    });
     await send("Emulation.setDeviceMetricsOverride", {
       width: 390,
       height: 844,
@@ -413,6 +448,68 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     await wait(
       'document.querySelector(".conversationhead strong")?.textContent==="QR Contact"',
     );
+    // Use a trusted pointer gesture so real browser autoplay policy is exercised.
+    const clickTrusted = async (selector) => {
+      const point = await evaluate(
+        `(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()`,
+      );
+      await send("Input.dispatchMouseEvent", {
+        type: "mousePressed",
+        ...point,
+        button: "left",
+        clickCount: 1,
+      });
+      await send("Input.dispatchMouseEvent", {
+        type: "mouseReleased",
+        ...point,
+        button: "left",
+        clickCount: 1,
+      });
+    };
+    assert.deepEqual(await evaluate("window.qaPlayedSounds"), []);
+    await fill(".composer input", "Sound test message");
+    await clickTrusted(".sendbtn");
+    await wait('window.qaPlayedSounds.includes("/audio/sentmessage.mp3")');
+    assert.equal(
+      await evaluate(
+        'window.qaPlayedSounds.filter(path=>path==="/audio/sentmessage.mp3").length',
+      ),
+      1,
+    );
+    const incoming = {
+      _id: "507f1f77bcf86cd799439022",
+      sender: target,
+      content: "Incoming sound test",
+      createdAt: new Date(Date.now() + 1000).toISOString(),
+    };
+    chatMessages.push(incoming);
+    latestChat.latestMessage = incoming;
+    latestChat.updatedAt = incoming.createdAt;
+    await evaluate('document.dispatchEvent(new Event("visibilitychange"))');
+    await wait('window.qaPlayedSounds.includes("/audio/alert.mp3")');
+    await evaluate('document.dispatchEvent(new Event("visibilitychange"))');
+    await delay(400);
+    assert.equal(
+      await evaluate(
+        'window.qaPlayedSounds.filter(path=>path==="/audio/alert.mp3").length',
+      ),
+      1,
+    );
+    failNextSend = true;
+    await fill(".composer input", "Failed send must stay silent");
+    await clickTrusted(".sendbtn");
+    await wait(
+      'document.querySelector(".toast")?.textContent.includes("Not found")',
+    );
+    assert.equal(
+      await evaluate(
+        'window.qaPlayedSounds.filter(path=>path==="/audio/sentmessage.mp3").length',
+      ),
+      1,
+    );
+    console.log(
+      "Message sound browser checks passed: real MP3 playback on successful send and incoming message, no duplicate alerts, and no send sound on failure.",
+    );
     authenticated = false;
     await send("Page.navigate", { url: base + "/?connect=" + target._id });
     await wait('!!document.querySelector(".authcard .contact-signin-note")');
@@ -456,6 +553,102 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       }
       await click(".authswitch button");
     }
+    const manifestReport = await send("Page.getAppManifest");
+    assert.deepEqual(manifestReport.errors, []);
+    const manifest = JSON.parse(manifestReport.data);
+    assert.equal(manifest.display, "standalone");
+    assert.ok(
+      manifest.icons.some(
+        (icon) => icon.sizes === "192x192" && icon.purpose === "any",
+      ),
+    );
+    assert.ok(
+      manifest.icons.some(
+        (icon) => icon.sizes === "512x512" && icon.purpose === "any",
+      ),
+    );
+    assert.ok(manifest.icons.some((icon) => icon.purpose === "maskable"));
+    const links = await evaluate(
+      `({favicon:!!document.querySelector('link[rel="icon"][href="/icon.svg?v=3"]'),apple:!!document.querySelector('link[rel="apple-touch-icon"]')})`,
+    );
+    assert.equal(links.favicon, true);
+    assert.equal(links.apple, true);
+    await evaluate("navigator.serviceWorker.ready.then(()=>true)");
+    await wait("!!navigator.serviceWorker.controller");
+    const installability = await send("Page.getInstallabilityErrors");
+    assert.deepEqual(
+      installability.installabilityErrors,
+      [],
+      "Browser installability check must pass",
+    );
+    const assets = await evaluate(
+      '(async()=>{const manifest=await (await fetch("/manifest.webmanifest")).json();return await Promise.all(manifest.icons.map(async icon=>({src:icon.src,ok:(await fetch(icon.src)).ok})))})()',
+    );
+    assert.equal(
+      assets.every((asset) => asset.ok),
+      true,
+    );
+    const workerTargets = (
+      await send("Target.getTargets", {}, null)
+    ).targetInfos.filter(
+      (target) =>
+        target.type === "service_worker" && target.url.startsWith(base),
+    );
+    assert.ok(workerTargets.length > 0);
+    const workerSessions = [];
+    for (const target of workerTargets) {
+      const attached = await send(
+        "Target.attachToTarget",
+        { targetId: target.targetId, flatten: true },
+        null,
+      );
+      workerSessions.push(attached.sessionId);
+      await send("Network.enable", {}, attached.sessionId);
+      await send(
+        "Network.emulateNetworkConditions",
+        {
+          offline: true,
+          latency: 0,
+          downloadThroughput: 0,
+          uploadThroughput: 0,
+        },
+        attached.sessionId,
+      );
+    }
+    await send("Network.enable");
+    await send("Network.emulateNetworkConditions", {
+      offline: true,
+      latency: 0,
+      downloadThroughput: 0,
+      uploadThroughput: 0,
+    });
+    await send("Page.navigate", { url: base + "/" });
+    await wait('document.body?.innerText.includes("You are offline")');
+    await wait(
+      'document.querySelector(".card img")?.complete && document.querySelector(".card img").naturalWidth > 0',
+    );
+    await send("Network.emulateNetworkConditions", {
+      offline: false,
+      latency: 0,
+      downloadThroughput: -1,
+      uploadThroughput: -1,
+    });
+    for (const workerSession of workerSessions)
+      await send(
+        "Network.emulateNetworkConditions",
+        {
+          offline: false,
+          latency: 0,
+          downloadThroughput: -1,
+          uploadThroughput: -1,
+        },
+        workerSession,
+      );
+    await click(".card button");
+    await wait('!!document.querySelector(".authcard")');
+    console.log(
+      "PWA checks passed: manifest, favicon, Apple icon, installability, icon URLs, service-worker registration, offline launch and reconnect.",
+    );
     assert.deepEqual(exceptions, []);
     console.log(
       "Browser checks passed: compact mobile header, profile edit, real canvas WebP upload, password form, QR preview, fake camera lifecycle, uploaded QR decoding, opening a conversation and contact-link continuation after login. API writes were mocked.",

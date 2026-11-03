@@ -47,3 +47,21 @@ For an optional browser smoke check, run `node tests/browser-profile-smoke.cjs` 
 ## Deployment
 
 Import the repository into Vercel, set `MONGODB_URI`, `JWT_SECRET`, and optionally `REDIS_URL`. Use a MongoDB connection string with network access appropriately restricted for serverless connectivity. MongoDB Atlas and Redis may need their own accounts. Verify `/api/ws` can upgrade, client cookies authenticate, and a message sent in one client updates another client connected to a different Function instance.
+
+## PWA installation and offline behavior
+
+The in-app brand, favicon and install icons use the shared `/icon.svg` chat logo. The manifest includes 192px/512px PNG icons, an Android maskable icon, and a separate 180px Apple touch icon is declared in the document head. Icon URLs are versioned for updates. The manifest link is explicit in the head so browsers detect it before streamed metadata.
+
+Deploy over HTTPS (localhost is allowed for development). The install control uses the browser prompt when available and provides manual installation instructions otherwise. Install availability and icon refresh timing depend on the browser; an existing installation may need reinstalling once if an old icon remains.
+
+After an online visit activates the service worker, an offline launch shows a cached public reconnect page with the same logo. Chat, account changes and QR contact lookups require connectivity. API responses, private chat HTML and Next.js development scripts are never cached by the worker. Going online and tapping Try again reloads the original URL.
+
+`node tests/pwa.test.cjs` verifies icon sizes, source consistency, Android safe-zone placement and favicon contents. The optional browser smoke check also verifies Chrome installability, icon links, service-worker registration, offline launch and reconnect. Browser account API writes are mocked; actual OS installation and physical-device behavior still require a device check.
+
+## Message sounds
+
+The app uses `public/audio/alert.mp3` for newly received messages and `public/audio/sentmessage.mp3` after a successful send. Initial history, own-message echoes, repeated synchronization responses, profile/group metadata changes and failed sends are silent. Incoming detection uses chat summaries, so it covers conversations that are not currently open, and batches a snapshot into one alert.
+
+Audio elements are silently prepared on a pointer or keyboard gesture to support browser playback policies. Blocked or unavailable audio never interrupts messaging. Sound follows the existing synchronization lifecycle; background/closed-app push notifications are not implemented. Audio resources are released on logout.
+
+Run `node tests/message-sounds.test.cjs` for message deduplication and playback lifecycle checks. The optional browser smoke check verifies real MP3 playback using mocked chat APIs and muted browser speaker output.

@@ -130,7 +130,8 @@ function workerFixture({ networkFails = false } = {}) {
     put: async (...args) => {
       writes.push(args);
     },
-    match: async () => "offline-artwork",
+    match: async (request) =>
+      request === "/offline.html" ? "offline-page" : "offline-artwork",
   };
   const context = vm.createContext({
     URL,
@@ -201,7 +202,7 @@ test("worker activation removes the old app cache and preserves unrelated caches
     },
   });
   await completion;
-  assert.deepEqual(f.deleted, ["pingme-static-v1"]);
+  assert.deepEqual(f.deleted, ["pingme-static-v1", "pingme-static-v2"]);
   assert.equal(f.claimed(), true);
 });
 
@@ -505,4 +506,30 @@ test("an in-flight history response preserves newly sent messages without duplic
   const second = { _id: "2", createdAt: "2026-11-03T10:01:00Z" };
   assert.deepEqual(mergeMessages([first], [second]), [first, second]);
   assert.deepEqual(mergeMessages([first, second], [second]), [first, second]);
+});
+
+test("navigation uses fresh online HTML and only a public reconnect page offline", async () => {
+  for (const networkFails of [false, true]) {
+    const f = workerFixture({ networkFails });
+    let result;
+    f.handlers.fetch({
+      request: {
+        url: "http://localhost:3001/?connect=someone",
+        method: "GET",
+        mode: "navigate",
+      },
+      respondWith: (promise) => {
+        result = promise;
+      },
+    });
+    const response = await result;
+    assert.equal(f.network.length, 1);
+    assert.equal(
+      f.writes.length,
+      0,
+      "Private navigations must never be cached",
+    );
+    if (networkFails) assert.equal(response, "offline-page");
+    else assert.equal(response.ok, true);
+  }
 });

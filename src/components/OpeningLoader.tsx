@@ -1,4 +1,4 @@
-import { MessageCircle } from "lucide-react";
+import AppLogo from "./AppLogo";
 
 export default function OpeningLoader() {
   return (
@@ -12,7 +12,7 @@ export default function OpeningLoader() {
         <span className="opening-loader-ring" />
         <span className="opening-loader-ring delayed" />
         <div className="brandmark">
-          <MessageCircle size={34} strokeWidth={1.8} />
+          <AppLogo />
         </div>
       </div>
       <p className="opening-loader-label">

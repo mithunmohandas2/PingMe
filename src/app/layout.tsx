@@ -24,6 +24,21 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
+        <link rel="manifest" href="/manifest.webmanifest" />
+        <link
+          rel="icon"
+          href="/icon.svg?v=3"
+          type="image/svg+xml"
+          sizes="any"
+        />
+        <link rel="icon" href="/favicon.ico?v=3" sizes="16x16 32x32 48x48" />
+        <link
+          rel="apple-touch-icon"
+          href="/icons/apple-touch-icon.png?v=3"
+          sizes="180x180"
+        />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-title" content="Ping Me" />
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body>

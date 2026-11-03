@@ -3,6 +3,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ProfilePanel from "./ProfilePanel";
 import OpeningLoader from "./OpeningLoader";
+import AppLogo from "./AppLogo";
+import {
+  createMessageSoundPlayer,
+  createMessageSoundTracker,
+} from "@/lib/message-sounds";
 import ContactScanner from "./ContactScanner";
 import { parseContactLink, type ContactUser } from "@/lib/contacts";
 import {
@@ -15,7 +20,6 @@ import {
   Check,
   ChevronDown,
   LogOut,
-  Menu,
   MessageCircle,
   QrCode,
   Search,
@@ -212,6 +216,22 @@ export default function Messenger() {
     messageRevision = useRef(0);
   selectedRef.current = selected;
   userIdRef.current = me?._id;
+  const messageFeedback = useRef<{
+    tracker: ReturnType<typeof createMessageSoundTracker>;
+    player: ReturnType<typeof createMessageSoundPlayer>;
+  } | null>(null);
+  useEffect(() => {
+    if (!me?._id) return;
+    const feedback = {
+      tracker: createMessageSoundTracker(me._id),
+      player: createMessageSoundPlayer(),
+    };
+    messageFeedback.current = feedback;
+    return () => {
+      feedback.player.dispose();
+      if (messageFeedback.current === feedback) messageFeedback.current = null;
+    };
+  }, [me?._id]);
   const expireSession = useCallback(() => {
     sessionEpoch.current++;
     userIdRef.current = undefined;
@@ -248,8 +268,11 @@ export default function Messenger() {
       userIdRef.current === id &&
       sessionEpoch.current === epoch &&
       chatRevision.current === revision
-    )
+    ) {
+      const feedback = messageFeedback.current;
+      if (feedback?.tracker.observe(data)) feedback.player.received();
       setChats(data);
+    }
   }, [expireSession]);
   const loadMessages = useCallback(
     async (chatId: string) => {
@@ -451,6 +474,8 @@ export default function Messenger() {
         body: JSON.stringify({ chatId, content }),
       });
       if (epoch !== sessionEpoch.current) return;
+      messageFeedback.current?.tracker.sent(chatId, message);
+      messageFeedback.current?.player.sent();
       messageRevision.current++;
       chatRevision.current++;
       if (selectedRef.current === chatId)
@@ -518,7 +543,7 @@ export default function Messenger() {
         <section className="authhero">
           <div className="brand">
             <span className="brandmark">
-              <MessageCircle size={27} />
+              <AppLogo />
             </span>
             <span>Ping Me</span>
           </div>
@@ -644,7 +669,7 @@ export default function Messenger() {
         <header className="sidehead">
           <div className="brand">
             <span className="brandmark small">
-              <MessageCircle size={22} />
+              <AppLogo />
             </span>
             <span>Ping Me</span>
           </div>
