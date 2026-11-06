@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/chat-sync.test.cjs tests/profile.test.cjs tests/pwa.test.cjs tests/message-sounds.test.cjs"
+    "test": "node --test tests/chat-sync.test.cjs tests/profile.test.cjs tests/pwa.test.cjs tests/message-sounds.test.cjs tests/message-actions.test.cjs tests/chat-images.test.cjs tests/message-retention.test.cjs tests/realtime-stream.test.cjs tests/account-deletion.test.cjs tests/chat-actions.test.cjs tests/group-rename.test.cjs"
   },
   "dependencies": {
     "@fontsource/poppins": "^5.3.0",

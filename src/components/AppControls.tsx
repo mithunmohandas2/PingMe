@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Download, Moon, Sun, X } from "lucide-react";
+import { Download, Moon, Sun, X, MoreVertical } from "lucide-react";
 
 type InstallPrompt = Event & {
   prompt(): Promise<void>;
@@ -9,6 +9,9 @@ type InstallPrompt = Event & {
 };
 
 export default function AppControls() {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const controls = useRef<HTMLDivElement>(null);
+  const moreButton = useRef<HTMLButtonElement>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [installPrompt, setInstallPrompt] = useState<InstallPrompt | null>(
     null,
@@ -89,6 +92,25 @@ export default function AppControls() {
     return () => window.removeEventListener("keydown", onKey);
   }, [help]);
 
+  useEffect(() => {
+    if (!menuOpen) return;
+    const outside = (event: PointerEvent) => {
+      if (!controls.current?.contains(event.target as Node)) setMenuOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+        moreButton.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [menuOpen]);
+
   function toggleTheme() {
     const next = theme === "dark" ? "light" : "dark";
     document.documentElement.dataset.theme = next;
@@ -125,31 +147,60 @@ export default function AppControls() {
   };
   return (
     <>
-      <div className="app-controls" role="group" aria-label="App controls">
-        {!installed && (
-          <button
-            ref={installButton}
-            className="control-button"
-            type="button"
-            aria-label="Install Ping Me app"
-            title="Install Ping Me app"
-            onClick={install}
-            disabled={installing}
-          >
-            <Download size={19} />
-            <span className="install-label">Install app</span>
-          </button>
-        )}
+      <div
+        ref={controls}
+        className={"app-controls" + (menuOpen ? " controls-open" : "")}
+        role="group"
+        aria-label="App controls"
+      >
+        <div id="chat-selection-actions" className="chat-selection-actions" />
         <button
-          className="control-button theme-toggle"
+          ref={moreButton}
           type="button"
-          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-          title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-          onClick={toggleTheme}
+          className="circlebtn chat-more-button"
+          aria-label="More options"
+          aria-expanded={menuOpen}
+          aria-controls="app-controls-actions"
+          onClick={() => setMenuOpen((value) => !value)}
         >
-          {theme === "dark" ? <Sun size={20} /> : <Moon size={20} />}
+          <MoreVertical size={21} />
         </button>
-        <div id="mobile-account-actions" className="mobile-account-actions" />
+        <div
+          id="app-controls-actions"
+          className="app-controls-actions"
+          onClick={(event) => {
+            if ((event.target as HTMLElement).closest("button")) {
+              setMenuOpen(false);
+              if (moreButton.current?.getClientRects().length)
+                moreButton.current.focus();
+            }
+          }}
+        >
+          {!installed && (
+            <button
+              ref={installButton}
+              className="control-button"
+              type="button"
+              aria-label="Install Ping Me app"
+              title="Install Ping Me app"
+              onClick={install}
+              disabled={installing}
+            >
+              <Download size={19} />
+              <span className="install-label">Install app</span>
+            </button>
+          )}
+          <button
+            className="control-button theme-toggle"
+            type="button"
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            onClick={toggleTheme}
+          >
+            {theme === "dark" ? <Sun size={20} /> : <Moon size={20} />}
+          </button>
+          <div id="mobile-account-actions" className="mobile-account-actions" />
+        </div>
       </div>
       {help && (
         <div

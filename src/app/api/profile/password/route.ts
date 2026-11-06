@@ -32,7 +32,7 @@ export async function PUT(req: Request) {
     const token = await createToken(id, (user.sessionVersion || 0) + 1);
     const password = await bcrypt.hash(parsed.data.newPassword, 12);
     const updated = await User.findOneAndUpdate(
-      { _id: id, password: user.password },
+      { _id: id, deletedAt: null, password: user.password },
       { $set: { password }, $inc: { sessionVersion: 1 } },
       { new: true },
     );

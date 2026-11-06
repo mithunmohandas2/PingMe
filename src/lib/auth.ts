@@ -52,7 +52,7 @@ export async function requireUser() {
     session.version === 0
       ? { $or: [{ sessionVersion: 0 }, { sessionVersion: { $exists: false } }] }
       : { sessionVersion: session.version };
-  return (await User.exists({ _id: session.id, ...version }))
+  return (await User.exists({ _id: session.id, deletedAt: null, ...version }))
     ? session.id
     : null;
 }
@@ -72,5 +72,6 @@ export function safeUser(u: any) {
     email: u.email,
     image: u.image || "",
     bio: u.bio || "",
+    ...(u.deletedAt ? { deletedAt: u.deletedAt } : {}),
   };
 }

@@ -2,6 +2,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ProfilePanel from "./ProfilePanel";
+import ChatImageEditor from "./ChatImageEditor";
+import MessagePreview from "./MessagePreview";
+import { imageExpired } from "@/lib/image-messages";
+import { compressImage } from "@/lib/compress-image";
+import PhotoPreview from "./PhotoPreview";
+import MessageActionDialog from "./MessageActionDialog";
+import SignOutDialog from "./SignOutDialog";
+import ChatActionDialog, { type ChatActionType } from "./ChatActionDialog";
+import MessageBubble, { type ChatMessage } from "./MessageBubble";
 import OpeningLoader from "./OpeningLoader";
 import AppLogo from "./AppLogo";
 import {
@@ -12,10 +21,17 @@ import ContactScanner from "./ContactScanner";
 import { parseContactLink, type ContactUser } from "@/lib/contacts";
 import {
   createChatSync,
+  createEventStream,
   createReadDeduper,
   mergeMessages,
 } from "@/lib/chat-sync";
 import {
+  Eraser,
+  Ban,
+  LogOut as LeaveGroupIcon,
+  ImagePlus,
+  Pencil,
+  Trash2,
   ArrowLeft,
   Check,
   ChevronDown,
@@ -30,12 +46,7 @@ import {
   X,
 } from "lucide-react";
 type User = ContactUser;
-type Message = {
-  _id: string;
-  sender: User;
-  content: string;
-  createdAt: string;
-};
+type Message = ChatMessage;
 type Chat = {
   _id: string;
   chatName: string;
@@ -43,7 +54,12 @@ type Chat = {
   users: User[];
   groupAdmin?: User;
   latestMessage?: Message;
+  activityMessage?: Message;
   updatedAt: string;
+  accountPurgeAt?: string | null;
+  clearedAt?: string | null;
+  blockedByMe?: boolean;
+  messagingBlocked?: boolean;
 };
 class RequestError extends Error {
   constructor(
@@ -62,7 +78,12 @@ function request<T>(
   const execute = async () => {
     const response = await fetch("/api" + path, {
       ...options,
-      headers: { "Content-Type": "application/json", ...options?.headers },
+      headers: {
+        ...(options?.body instanceof FormData
+          ? {}
+          : { "Content-Type": "application/json" }),
+        ...options?.headers,
+      },
       cache: "no-store",
     });
     const result = await response.json().catch(() => ({}));
@@ -113,6 +134,7 @@ export default function Messenger() {
         .catch(() => {});
     }
   }, []);
+  const [previewUser, setPreviewUser] = useState<User | null>(null);
   const [me, setMe] = useState<User | null>(null),
     [auth, setAuth] = useState<"login" | "register">("login"),
     [loading, setLoading] = useState(true),
@@ -121,8 +143,78 @@ export default function Messenger() {
     [chats, setChats] = useState<Chat[]>([]),
     [selected, setSelected] = useState<string | null>(null),
     [messages, setMessages] = useState<Message[]>([]);
+  const [mobileChat, setMobileChat] = useState(false),
+    [wsActive, setWsActive] = useState(false);
+  const [chatAction, setChatAction] = useState<{
+    action: ChatActionType;
+    chatId: string;
+    name: string;
+  } | null>(null);
+  const [chatPhoto, setChatPhoto] = useState<{
+    file: File;
+    chatId: string;
+    epoch: number;
+  } | null>(null);
+  const chatPhotoInput = useRef<HTMLInputElement>(null);
+  const [messageSelection, setMessageSelection] = useState<Set<string>>(
+    new Set(),
+  );
+  const [messageAction, setMessageAction] = useState<{
+    action: "delete";
+    messages: Message[];
+  } | null>(null);
+  const selectedMessages = messages.filter(
+    (message) =>
+      messageSelection.has(message._id) &&
+      message.sender._id === me?._id &&
+      !message.deletedAt &&
+      message.kind !== "group-rename" &&
+      !imageExpired(message),
+  );
+  const selectionMode = selectedMessages.length > 0;
+  useEffect(() => {
+    setMessageSelection(new Set());
+    setMessageAction(null);
+    setChatPhoto(null);
+    setChatAction(null);
+  }, [selected, me?._id, mobileChat]);
+  useEffect(() => {
+    const available = new Set(
+      messages
+        .filter(
+          (message) =>
+            message.sender._id === me?._id &&
+            !message.deletedAt &&
+            message.kind !== "group-rename",
+        )
+        .map((message) => message._id),
+    );
+    setMessageSelection((previous) => {
+      const next = new Set([...previous].filter((id) => available.has(id)));
+      return next.size === previous.size ? previous : next;
+    });
+  }, [messages, me?._id]);
+  useEffect(() => {
+    if (!selectionMode) return;
+    const cancel = (event: KeyboardEvent) => {
+      if (
+        event.key === "Escape" &&
+        !document.querySelector("dialog[open], .controls-open")
+      )
+        setMessageSelection(new Set());
+    };
+    window.addEventListener("keydown", cancel);
+    return () => window.removeEventListener("keydown", cancel);
+  }, [selectionMode]);
+  function toggleMessage(id: string) {
+    setMessageSelection((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
   const [search, setSearch] = useState(""),
-    [found, setFound] = useState<User[]>([]),
     [groupSearch, setGroupSearch] = useState(""),
     [groupResults, setGroupResults] = useState<User[]>([]),
     [compose, setCompose] = useState(""),
@@ -131,8 +223,58 @@ export default function Messenger() {
     [groupMembers, setGroupMembers] = useState<string[]>([]),
     [showRename, setShowRename] = useState(false),
     [rename, setRename] = useState("");
-  const [mobileChat, setMobileChat] = useState(false),
-    [wsActive, setWsActive] = useState(false);
+  const [editingMessage, setEditingMessage] = useState<{
+    message: Message;
+    chatId: string;
+    previousDraft: string;
+  } | null>(null);
+  const composerInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (editingMessage) {
+      setCompose(editingMessage.previousDraft);
+      setEditingMessage(null);
+    }
+  }, [selected, me?._id, mobileChat]);
+  useEffect(() => {
+    if (editingMessage) composerInput.current?.focus();
+  }, [editingMessage]);
+  useEffect(() => {
+    if (
+      editingMessage &&
+      !messages.some(
+        (message) =>
+          message._id === editingMessage.message._id && !message.deletedAt,
+      )
+    ) {
+      setCompose(editingMessage.previousDraft);
+      setEditingMessage(null);
+    }
+  }, [messages, editingMessage]);
+  function startEditing(message: Message) {
+    if (
+      !selected ||
+      busy ||
+      chatReadOnly ||
+      message.kind === "image" ||
+      message.kind === "group-rename"
+    )
+      return;
+    setEditingMessage({
+      message,
+      chatId: selected,
+      previousDraft: editingMessage?.previousDraft ?? compose,
+    });
+    setCompose(message.content);
+    setMessageSelection(new Set());
+    setError("");
+  }
+  function cancelEditing() {
+    if (!editingMessage || busy) return;
+    setCompose(editingMessage.previousDraft);
+    setEditingMessage(null);
+    composerInput.current?.focus();
+  }
+  const [showSignOut, setShowSignOut] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [contactId, setContactId] = useState<string | null>(null);
@@ -177,8 +319,24 @@ export default function Messenger() {
   }, [contactId, me?._id]);
   const [mobileAccountActions, setMobileAccountActions] =
     useState<HTMLElement | null>(null);
+  const [selectionActions, setSelectionActions] = useState<HTMLElement | null>(
+    null,
+  );
   useEffect(() => {
-    setMobileAccountActions(document.getElementById("mobile-account-actions"));
+    let selectionTarget: HTMLElement | null = null;
+    let target: HTMLElement | null = null;
+    const connectActions = () => {
+      if (target?.isConnected && selectionTarget?.isConnected) return;
+      selectionTarget = document.getElementById("chat-selection-actions");
+      setSelectionActions(selectionTarget);
+      target = document.getElementById("mobile-account-actions");
+      setMobileAccountActions(target);
+    };
+    // The shared controls can mount later or be replaced during navigation/HMR.
+    const observer = new MutationObserver(connectActions);
+    observer.observe(document.body, { childList: true, subtree: true });
+    connectActions();
+    return () => observer.disconnect();
   }, []);
   const profileButton = useRef<HTMLButtonElement>(null),
     mobileProfileButton = useRef<HTMLButtonElement>(null),
@@ -186,13 +344,18 @@ export default function Messenger() {
   const restoreProfileFocus = useCallback(() => {
     const mobileButton = mobileProfileButton.current;
     if (mobileButton?.getClientRects().length) mobileButton.focus();
-    else profileButton.current?.focus();
+    else {
+      const more =
+        document.querySelector<HTMLButtonElement>(".chat-more-button");
+      if (more?.getClientRects().length) more.focus();
+      else profileButton.current?.focus();
+    }
   }, []);
   useEffect(() => {
     if (!showProfile) return;
     profileClose.current?.focus();
     const close = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && !document.querySelector("dialog[open]")) {
         setShowProfile(false);
         restoreProfileFocus();
       }
@@ -202,13 +365,40 @@ export default function Messenger() {
   }, [showProfile, restoreProfileFocus]);
   const bottom = useRef<HTMLDivElement>(null),
     lastSelected = useRef<string | null>(null);
+  const searchQuery = search.trim().toLowerCase();
+  const visibleChats = !searchQuery
+    ? chats
+    : chats.filter((chat) => {
+        if (chat.isGroup)
+          return chat.chatName.toLowerCase().includes(searchQuery);
+        const contact = chat.users.find((user) => user._id !== me?._id);
+        return [contact?.name, contact?.email].some((value) =>
+          value?.toLowerCase().includes(searchQuery),
+        );
+      });
   const active = chats.find((c) => c._id === selected) || null;
   const other = active?.users.find((u) => u._id !== me?._id);
+  const accountDeleted =
+    !!active &&
+    !active.isGroup &&
+    (!!active.accountPurgeAt || active.users.some((user) => !!user.deletedAt));
+  const chatReadOnly = accountDeleted || !!active?.messagingBlocked;
+  useEffect(() => {
+    if (chatReadOnly) {
+      setEditingMessage(null);
+      setChatPhoto(null);
+      setMessageSelection(new Set());
+    }
+  }, [chatReadOnly]);
   const title = active
     ? active.isGroup
       ? active.chatName
       : other?.name || "Conversation"
     : "Ping Me";
+  const clearTimes = useRef(new Map<string, number>());
+  useEffect(() => {
+    clearTimes.current.clear();
+  }, [me?._id]);
   const selectedRef = useRef(selected),
     userIdRef = useRef(me?._id);
   const sessionEpoch = useRef(0),
@@ -235,6 +425,7 @@ export default function Messenger() {
   const expireSession = useCallback(() => {
     sessionEpoch.current++;
     userIdRef.current = undefined;
+    clearTimes.current.clear();
     setMe(null);
     setSelected(null);
     setChats([]);
@@ -245,6 +436,7 @@ export default function Messenger() {
     setShowGroup(false);
     setShowRename(false);
     setMobileChat(false);
+    setShowSignOut(false);
     setError("Your session expired. Please sign in again.");
   }, []);
   const loadChats = useCallback(async () => {
@@ -271,6 +463,23 @@ export default function Messenger() {
     ) {
       const feedback = messageFeedback.current;
       if (feedback?.tracker.observe(data)) feedback.player.received();
+      for (const chat of data) {
+        if (chat.clearedAt)
+          clearTimes.current.set(
+            chat._id,
+            Math.max(
+              clearTimes.current.get(chat._id) || 0,
+              Date.parse(chat.clearedAt),
+            ),
+          );
+      }
+      const selectedChatId = selectedRef.current;
+      if (selectedChatId && !data.some((chat) => chat._id === selectedChatId)) {
+        selectedRef.current = null;
+        setSelected(null);
+        setMessages([]);
+        setMobileChat(false);
+      }
       setChats(data);
     }
   }, [expireSession]);
@@ -302,9 +511,14 @@ export default function Messenger() {
         selectedRef.current === chatId
       )
         setMessages((previous) =>
-          messageRevision.current === revision
+          (messageRevision.current === revision
             ? data
-            : mergeMessages(data, previous),
+            : mergeMessages(data, previous)
+          ).filter(
+            (message) =>
+              Date.parse(message.createdAt) >
+              (clearTimes.current.get(chatId) || 0),
+          ),
         );
     },
     [expireSession],
@@ -312,7 +526,22 @@ export default function Messenger() {
   const upsertChat = useCallback((chat: Chat) => {
     chatRevision.current++;
     setChats((previous) =>
-      [chat, ...previous.filter((c) => c._id !== chat._id)]
+      [
+        (() => {
+          const current = previous.find((value) => value._id === chat._id);
+          const merged = { ...current, ...chat };
+          if (!chat.clearedAt && current?.clearedAt)
+            merged.clearedAt = current.clearedAt;
+          const cutoff = clearTimes.current.get(chat._id) || 0;
+          if (
+            merged.latestMessage &&
+            Date.parse(merged.latestMessage.createdAt) <= cutoff
+          )
+            merged.latestMessage = undefined;
+          return merged;
+        })(),
+        ...previous.filter((c) => c._id !== chat._id),
+      ]
         .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
         .slice(0, 100),
     );
@@ -344,18 +573,17 @@ export default function Messenger() {
     }
   }, [selected, loadMessages]);
   useEffect(() => {
-    bottom.current?.scrollIntoView({ behavior: "smooth" });
+    const messageArea = bottom.current?.parentElement;
+    messageArea?.scrollTo({
+      top: messageArea.scrollHeight,
+      behavior: "smooth",
+    });
   }, [messages.length, selected]);
   useEffect(() => {
     if (!me?._id) return;
     const sync = createChatSync({
-      openSocket: () =>
-        new WebSocket(
-          (location.protocol === "https:" ? "wss:" : "ws:") +
-            "//" +
-            location.host +
-            "/api/ws",
-        ),
+      openSocket: () => createEventStream(),
+      onSessionExpired: expireSession,
       refresh: async (chatIds) => {
         const chatId = selectedRef.current;
         await Promise.all([
@@ -380,21 +608,7 @@ export default function Messenger() {
       window.removeEventListener("online", activityChanged);
       window.removeEventListener("offline", activityChanged);
     };
-  }, [me?._id, loadChats, loadMessages]);
-  useEffect(() => {
-    if (!search.trim() || !me) {
-      setFound([]);
-      return;
-    }
-    const timer = setTimeout(
-      () =>
-        request<User[]>("/users?search=" + encodeURIComponent(search))
-          .then(setFound)
-          .catch(() => setFound([])),
-      250,
-    );
-    return () => clearTimeout(timer);
-  }, [search, me]);
+  }, [me?._id, loadChats, loadMessages, expireSession]);
   useEffect(() => {
     if (!showGroup || !groupSearch.trim()) {
       setGroupResults([]);
@@ -433,13 +647,23 @@ export default function Messenger() {
     }
   }
   async function logout() {
+    await request("/auth/logout", { method: "POST" });
     sessionEpoch.current++;
-    await request("/auth/logout", { method: "POST" }).catch(() => {});
+    userIdRef.current = undefined;
+    selectedRef.current = null;
+    clearTimes.current.clear();
     setMe(null);
     setSelected(null);
     setChats([]);
     setMessages([]);
     setSearch("");
+    setShowProfile(false);
+    setShowScanner(false);
+    setShowGroup(false);
+    setShowRename(false);
+    setShowSignOut(false);
+    setMobileChat(false);
+    setError("");
   }
   async function startChat(id: string) {
     setError("");
@@ -462,8 +686,36 @@ export default function Messenger() {
   }
   async function send(e: React.FormEvent) {
     e.preventDefault();
-    if (!selected || !compose.trim() || busy) return;
+    if (!selected || !compose.trim() || busy || chatReadOnly) return;
     const content = compose.trim();
+    if (editingMessage) {
+      if (
+        content === editingMessage.message.content ||
+        selected !== editingMessage.chatId
+      )
+        return;
+      const editing = editingMessage,
+        epoch = sessionEpoch.current;
+      setBusy(true);
+      setError("");
+      try {
+        await changeMessage(editing.message, content);
+        if (
+          epoch === sessionEpoch.current &&
+          selectedRef.current === editing.chatId
+        ) {
+          setCompose(editing.previousDraft);
+          setEditingMessage(null);
+        }
+      } catch (error) {
+        setError(
+          error instanceof Error ? error.message : "Could not edit message",
+        );
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
     setCompose("");
     setBusy(true);
     try {
@@ -500,6 +752,165 @@ export default function Messenger() {
       setBusy(false);
     }
   }
+  async function changeMessage(message: Message, content?: string) {
+    const chatId = selectedRef.current;
+    const epoch = sessionEpoch.current;
+    if (!chatId) throw new Error("Please open the conversation again");
+    const updated = await request<Message>(
+      "/messages/" +
+        encodeURIComponent(chatId) +
+        "/" +
+        encodeURIComponent(message._id),
+      {
+        method: content === undefined ? "DELETE" : "PATCH",
+        ...(content === undefined ? {} : { body: JSON.stringify({ content }) }),
+      },
+    );
+    if (epoch !== sessionEpoch.current) return;
+    messageRevision.current++;
+    chatRevision.current++;
+    if (selectedRef.current === chatId)
+      setMessages((previous) =>
+        previous.map((item) => (item._id === updated._id ? updated : item)),
+      );
+    setChats((previous) =>
+      previous.map((chat) =>
+        chat._id === chatId && chat.latestMessage?._id === updated._id
+          ? { ...chat, latestMessage: updated }
+          : chat,
+      ),
+    );
+  }
+  async function deleteSelectedMessages(targets: Message[]) {
+    const chatId = selectedRef.current;
+    const epoch = sessionEpoch.current;
+    if (!chatId) throw new Error("Please open the conversation again");
+    const updated = await request<Message[]>(
+      "/messages/" + encodeURIComponent(chatId),
+      {
+        method: "DELETE",
+        body: JSON.stringify({
+          messageIds: targets.map((message) => message._id),
+        }),
+      },
+    );
+    if (epoch !== sessionEpoch.current) return;
+    const byId = new Map(updated.map((message) => [message._id, message]));
+    messageRevision.current++;
+    chatRevision.current++;
+    if (selectedRef.current === chatId)
+      setMessages((previous) =>
+        previous.map((message) => byId.get(message._id) || message),
+      );
+    setChats((previous) =>
+      previous.map((chat) =>
+        chat._id === chatId &&
+        chat.latestMessage &&
+        byId.has(chat.latestMessage._id)
+          ? { ...chat, latestMessage: byId.get(chat.latestMessage._id)! }
+          : chat,
+      ),
+    );
+    setMessageSelection(new Set());
+  }
+  async function sendImage(file: File) {
+    const target = chatPhoto;
+    if (chatReadOnly)
+      throw new Error("Messaging is unavailable for this conversation");
+    if (
+      !target ||
+      target.epoch !== sessionEpoch.current ||
+      target.chatId !== selectedRef.current
+    )
+      throw new Error("Please open the conversation again");
+    const compressed = await compressImage(file, {
+      maxWidth: 1024,
+      quality: 0.8,
+      thresholdKB: 200,
+    });
+    const form = new FormData();
+    form.set("chatId", target.chatId);
+    form.set("image", compressed);
+    const message = await request<Message>("/messages/image", {
+      method: "POST",
+      body: form,
+    });
+    if (target.epoch !== sessionEpoch.current) return;
+    messageFeedback.current?.tracker.sent(target.chatId, message);
+    messageFeedback.current?.player.sent();
+    messageRevision.current++;
+    chatRevision.current++;
+    if (target.chatId === selectedRef.current)
+      setMessages((previous) => [
+        ...previous.filter((item) => item._id !== message._id),
+        message,
+      ]);
+    setChats((previous) =>
+      previous
+        .map((chat) =>
+          chat._id === target.chatId
+            ? { ...chat, latestMessage: message, updatedAt: message.createdAt }
+            : chat,
+        )
+        .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)),
+    );
+  }
+  async function confirmChatAction(target: {
+    action: ChatActionType;
+    chatId: string;
+    name: string;
+  }) {
+    const epoch = sessionEpoch.current;
+    const result = await request<{
+      clearedAt?: string;
+      blockedByMe?: boolean;
+      messagingBlocked?: boolean;
+    }>("/chats/" + target.chatId + "/actions", {
+      method: "POST",
+      body: JSON.stringify({ action: target.action }),
+    });
+    if (epoch !== sessionEpoch.current) return;
+    messageRevision.current++;
+    chatRevision.current++;
+    if (target.action === "clear") {
+      const clearedAt = result.clearedAt!;
+      clearTimes.current.set(target.chatId, Date.parse(clearedAt));
+      if (selectedRef.current === target.chatId) {
+        setMessages([]);
+        setEditingMessage(null);
+        setMessageSelection(new Set());
+      }
+      setChats((previous) =>
+        previous.map((chat) =>
+          chat._id === target.chatId
+            ? { ...chat, clearedAt, latestMessage: undefined }
+            : chat,
+        ),
+      );
+    } else if (target.action === "leave" || target.action === "delete-group") {
+      setChats((previous) =>
+        previous.filter((chat) => chat._id !== target.chatId),
+      );
+      if (selectedRef.current === target.chatId) {
+        selectedRef.current = null;
+        setSelected(null);
+        setMessages([]);
+        setMobileChat(false);
+      }
+    } else {
+      setChats((previous) =>
+        previous.map((chat) =>
+          chat._id === target.chatId
+            ? {
+                ...chat,
+                blockedByMe: result.blockedByMe,
+                messagingBlocked: result.messagingBlocked,
+              }
+            : chat,
+        ),
+      );
+    }
+  }
   async function createGroup() {
     setError("");
     try {
@@ -531,6 +942,19 @@ export default function Messenger() {
       });
       if (epoch !== sessionEpoch.current) return;
       upsertChat(chat);
+      const activity = chat.activityMessage;
+      if (activity) {
+        messageRevision.current++;
+        messageFeedback.current?.tracker.sent(chat._id, activity);
+        if (selectedRef.current === chat._id)
+          setMessages((previous) =>
+            mergeMessages([activity], previous).filter(
+              (message) =>
+                Date.parse(message.createdAt) >
+                (clearTimes.current.get(chat._id) || 0),
+            ),
+          );
+      }
       setShowRename(false);
     } catch (e) {
       setError((e as Error).message);
@@ -639,7 +1063,77 @@ export default function Messenger() {
       </main>
     );
   return (
-    <main className="shell">
+    <main className="shell" data-chat-open={mobileChat}>
+      {showSignOut && (
+        <SignOutDialog
+          onConfirm={logout}
+          onClose={() => setShowSignOut(false)}
+        />
+      )}
+      {chatAction && (
+        <ChatActionDialog
+          action={chatAction.action}
+          name={chatAction.name}
+          onClose={() => setChatAction(null)}
+          onConfirm={() => confirmChatAction(chatAction)}
+        />
+      )}
+      {chatPhoto && (
+        <ChatImageEditor
+          file={chatPhoto.file}
+          onSave={sendImage}
+          onClose={() => setChatPhoto(null)}
+        />
+      )}
+      {messageAction && (
+        <MessageActionDialog
+          messages={messageAction.messages}
+          onClose={() => setMessageAction(null)}
+          onConfirm={() => deleteSelectedMessages(messageAction.messages)}
+        />
+      )}
+      {selectionActions &&
+        selectionMode &&
+        createPortal(
+          <>
+            {!chatReadOnly &&
+              selectedMessages.length === 1 &&
+              selectedMessages[0].kind !== "image" &&
+              selectedMessages[0].kind !== "group-rename" && (
+                <button
+                  type="button"
+                  className="circlebtn"
+                  aria-label="Edit selected message"
+                  title="Edit message"
+                  onClick={() => startEditing(selectedMessages[0])}
+                >
+                  <Pencil size={18} />
+                </button>
+              )}
+            <button
+              type="button"
+              className="circlebtn selection-delete"
+              aria-label="Delete selected messages"
+              title="Delete selected messages"
+              onClick={() =>
+                setMessageAction({
+                  action: "delete",
+                  messages: selectedMessages,
+                })
+              }
+            >
+              <Trash2 size={18} />
+            </button>
+          </>,
+          selectionActions,
+        )}
+      {previewUser?.image && (
+        <PhotoPreview
+          image={previewUser.image}
+          name={previewUser.name}
+          onClose={() => setPreviewUser(null)}
+        />
+      )}
       {mobileAccountActions &&
         createPortal(
           <>
@@ -653,12 +1147,98 @@ export default function Messenger() {
             >
               <UserRound size={19} />
             </button>
+            {active?.isGroup && active.groupAdmin?._id === me._id && (
+              <button
+                className="control-button"
+                type="button"
+                aria-label="Rename group"
+                onClick={() => {
+                  setRename(active.chatName);
+                  setShowRename(true);
+                }}
+              >
+                <Users size={19} />
+              </button>
+            )}
+            {active && (
+              <>
+                <button
+                  className="control-button"
+                  type="button"
+                  aria-label={
+                    active.isGroup ? "Clear group chat" : "Clear chat"
+                  }
+                  onClick={() =>
+                    setChatAction({
+                      action: "clear",
+                      chatId: active._id,
+                      name: title,
+                    })
+                  }
+                >
+                  <Eraser size={19} />
+                </button>
+                {active.isGroup &&
+                  active.users.length === 1 &&
+                  active.users[0]._id === me._id && (
+                    <button
+                      className="control-button menu-danger"
+                      type="button"
+                      aria-label="Delete group"
+                      onClick={() =>
+                        setChatAction({
+                          action: "delete-group",
+                          chatId: active._id,
+                          name: title,
+                        })
+                      }
+                    >
+                      <Trash2 size={19} />
+                    </button>
+                  )}
+                {active.isGroup ? (
+                  <button
+                    className="control-button menu-danger"
+                    type="button"
+                    aria-label="Leave group"
+                    onClick={() =>
+                      setChatAction({
+                        action: "leave",
+                        chatId: active._id,
+                        name: title,
+                      })
+                    }
+                  >
+                    <LeaveGroupIcon size={19} />
+                  </button>
+                ) : (
+                  !accountDeleted && (
+                    <button
+                      className="control-button menu-danger"
+                      type="button"
+                      aria-label={
+                        active.blockedByMe ? "Unblock user" : "Block user"
+                      }
+                      onClick={() =>
+                        setChatAction({
+                          action: active.blockedByMe ? "unblock" : "block",
+                          chatId: active._id,
+                          name: title,
+                        })
+                      }
+                    >
+                      <Ban size={19} />
+                    </button>
+                  )
+                )}
+              </>
+            )}
             <button
               className="control-button"
               type="button"
               title="Sign out"
               aria-label="Sign out"
-              onClick={logout}
+              onClick={() => setShowSignOut(true)}
             >
               <LogOut size={19} />
             </button>
@@ -667,17 +1247,31 @@ export default function Messenger() {
         )}
       <aside className={"sidebar " + (mobileChat ? "mobile-hidden" : "")}>
         <header className="sidehead">
-          <div className="brand">
+          <button
+            type="button"
+            className="brand brand-home"
+            aria-label="Go to start screen"
+            title="Go to start screen"
+            onClick={() => {
+              selectedRef.current = null;
+              messageRevision.current++;
+              setSelected(null);
+              setMessages([]);
+              setMobileChat(false);
+              setSearch("");
+              setError("");
+            }}
+          >
             <span className="brandmark small">
               <AppLogo />
             </span>
             <span>Ping Me</span>
-          </div>
+          </button>
           <button
             className="circlebtn desktop-signout"
             title="Sign out"
             aria-label="Sign out"
-            onClick={logout}
+            onClick={() => setShowSignOut(true)}
           >
             <LogOut size={19} />
           </button>
@@ -723,10 +1317,10 @@ export default function Messenger() {
             <QrCode size={20} />
           </button>
           <input
-            placeholder="Search people..."
+            placeholder="Search recent chats..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            aria-label="Search users"
+            aria-label="Search recent chats"
           />
           {search && (
             <button onClick={() => setSearch("")} aria-label="Clear search">
@@ -735,97 +1329,73 @@ export default function Messenger() {
           )}
         </div>
         <div className="scrolllist">
-          {search.trim() ? (
-            <>
-              <div className="sectionlabel">PEOPLE</div>
-              {found.length ? (
-                found.map((u) => (
+          <>
+            <div className="sectionlabel">
+              RECENT CHATS <span>{visibleChats.length}</span>
+            </div>
+            {visibleChats.length ? (
+              visibleChats.map((c) => {
+                const user = c.users.find((u) => u._id !== me._id);
+                return (
                   <button
-                    key={u._id}
-                    className="chatentry"
+                    key={c._id}
+                    className={
+                      "chatentry " + (selected === c._id ? "active" : "")
+                    }
                     onClick={() => {
-                      if (showGroup) {
-                        setGroupMembers((a) =>
-                          a.includes(u._id)
-                            ? a.filter((i) => i !== u._id)
-                            : [...a, u._id],
-                        );
-                      } else startChat(u._id);
+                      setSelected(c._id);
+                      setMobileChat(true);
                     }}
                   >
-                    <Avatar user={u} />
-                    <div className="entrytext">
-                      <strong>{u.name}</strong>
-                      <small>{u.email}</small>
-                    </div>
-                    {groupMembers.includes(u._id) && <Check size={17} />}
-                  </button>
-                ))
-              ) : (
-                <p className="emptylist">No matching people found</p>
-              )}
-            </>
-          ) : (
-            <>
-              <div className="sectionlabel">
-                RECENT CHATS <span>{chats.length}</span>
-              </div>
-              {chats.length ? (
-                chats.map((c) => {
-                  const user = c.users.find((u) => u._id !== me._id);
-                  return (
-                    <button
-                      key={c._id}
-                      className={
-                        "chatentry " + (selected === c._id ? "active" : "")
+                    <Avatar
+                      user={
+                        c.isGroup
+                          ? { _id: c._id, name: c.chatName, email: "" }
+                          : user
                       }
-                      onClick={() => {
-                        setSelected(c._id);
-                        setMobileChat(true);
-                      }}
-                    >
-                      <Avatar
-                        user={
-                          c.isGroup
-                            ? { _id: c._id, name: c.chatName, email: "" }
-                            : user
-                        }
-                      />
-                      <div className="entrytext">
-                        <strong>
-                          {c.isGroup
-                            ? c.chatName
-                            : user?.name || "Conversation"}
-                        </strong>
-                        <small>
-                          {c.latestMessage?.content ||
-                            (c.isGroup
+                    />
+                    <div className="entrytext">
+                      <strong>
+                        {c.isGroup ? c.chatName : user?.name || "Conversation"}
+                      </strong>
+                      <small>
+                        {(c.latestMessage ? (
+                          <MessagePreview message={c.latestMessage} />
+                        ) : null) ||
+                          (c.clearedAt
+                            ? "Chat cleared"
+                            : c.isGroup
                               ? `${c.users.length} members`
                               : "Start a conversation")}
-                        </small>
-                      </div>
-                      <time>
-                        {c.latestMessage?.createdAt
-                          ? new Date(
-                              c.latestMessage.createdAt,
-                            ).toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })
-                          : ""}
-                      </time>
-                    </button>
-                  );
-                })
-              ) : (
-                <div className="emptylist">
-                  <MessageCircle size={30} />
-                  <strong>No chats yet</strong>
-                  <span>Search for someone to say hello!</span>
-                </div>
-              )}
-            </>
-          )}
+                      </small>
+                    </div>
+                    <time>
+                      {c.latestMessage?.createdAt
+                        ? new Date(
+                            c.latestMessage.createdAt,
+                          ).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : ""}
+                    </time>
+                  </button>
+                );
+              })
+            ) : (
+              <div className="emptylist">
+                <MessageCircle size={30} />
+                <strong>
+                  {search.trim() ? "No matching chats" : "No chats yet"}
+                </strong>
+                <span>
+                  {search.trim()
+                    ? "Try another name, or use the QR button to connect."
+                    : "Use the QR button to connect with someone new."}
+                </span>
+              </div>
+            )}
+          </>
         </div>
         <footer className="sidefoot">
           <span className={"statusdot " + (wsActive ? "connected" : "")} />
@@ -838,62 +1408,95 @@ export default function Messenger() {
       >
         {active ? (
           <>
-            <header className="conversationhead">
+            <header
+              className={
+                "conversationhead" +
+                (selectionMode ? " selecting-messages" : "")
+              }
+            >
               <button
-                className="mobileback circlebtn"
-                aria-label="Back to conversations"
-                onClick={() => setMobileChat(false)}
-              >
-                <ArrowLeft />
-              </button>
-              <Avatar
-                user={
-                  active.isGroup
-                    ? { _id: active._id, name: title, email: "" }
-                    : other
+                className={
+                  (selectionMode ? "selection-cancel" : "mobileback") +
+                  " circlebtn"
                 }
-              />
-              <div>
-                <strong>{title}</strong>
-                <small>
+                aria-label={
+                  selectionMode
+                    ? "Cancel message selection"
+                    : "Back to conversations"
+                }
+                onClick={() =>
+                  selectionMode
+                    ? setMessageSelection(new Set())
+                    : setMobileChat(false)
+                }
+              >
+                {selectionMode ? <X size={20} /> : <ArrowLeft />}
+              </button>
+              {!selectionMode &&
+                (!active.isGroup && other?.image ? (
+                  <button
+                    type="button"
+                    className="avatar-preview-trigger"
+                    aria-label={"View " + other.name + "'s profile photo"}
+                    onClick={() => setPreviewUser(other)}
+                  >
+                    <Avatar user={other} />
+                  </button>
+                ) : (
+                  <Avatar
+                    user={
+                      active.isGroup
+                        ? { _id: active._id, name: title, email: "" }
+                        : other
+                    }
+                  />
+                ))}
+              <div className="conversation-identity">
+                <strong title={title}>
+                  {selectionMode
+                    ? selectedMessages.length + " selected"
+                    : title}
+                </strong>
+                <small hidden={selectionMode}>
                   {active.isGroup
                     ? `${active.users.length} group members`
-                    : other?.email || "Private conversation"}
+                    : accountDeleted
+                      ? "User account deleted"
+                      : other?.email || "Private conversation"}
                 </small>
               </div>
-              {active.isGroup && active.groupAdmin?._id === me._id && (
-                <button
-                  className="renamebtn"
-                  onClick={() => {
-                    setRename(active.chatName);
-                    setShowRename(true);
-                  }}
-                >
-                  Rename <ChevronDown size={14} />
-                </button>
-              )}
+              {!selectionMode &&
+                active.isGroup &&
+                active.groupAdmin?._id === me._id && (
+                  <button
+                    className="renamebtn chat-rename"
+                    onClick={() => {
+                      setRename(active.chatName);
+                      setShowRename(true);
+                    }}
+                  >
+                    Rename <ChevronDown size={14} />
+                  </button>
+                )}
             </header>
             <div className="messagearea">
               {messages.length ? (
                 messages.map((m) => (
                   <div
                     key={m._id}
+                    data-message-id={m._id}
                     className={
                       "msgrow " + (m.sender._id === me._id ? "own" : "theirs")
                     }
                   >
-                    <div className="bubble">
-                      {active.isGroup && m.sender._id !== me._id && (
-                        <b>{m.sender.name}</b>
-                      )}
-                      <p>{m.content}</p>
-                      <time>
-                        {new Date(m.createdAt).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </time>
-                    </div>
+                    <MessageBubble
+                      message={m}
+                      own={m.sender._id === me._id}
+                      group={active.isGroup}
+                      selected={messageSelection.has(m._id)}
+                      selecting={selectionMode}
+                      onSelect={toggleMessage}
+                    />
                   </div>
                 ))
               ) : (
@@ -901,27 +1504,146 @@ export default function Messenger() {
                   <span className="welcomeicon">
                     <MessageCircle size={34} />
                   </span>
-                  <h3>It's the beginning of something good</h3>
-                  <p>Say hello and get the conversation going.</p>
+                  <h3>
+                    {active.clearedAt
+                      ? "Chat cleared"
+                      : "It's the beginning of something good"}
+                  </h3>
+                  <p>
+                    {active.clearedAt
+                      ? "New messages will appear here. Other participants keep their history."
+                      : "Say hello and get the conversation going."}
+                  </p>
                 </div>
               )}
               <div ref={bottom} />
             </div>
-            <form className="composer" onSubmit={send}>
+            <form
+              className={
+                "composer" +
+                (editingMessage ? " is-editing" : "") +
+                (chatReadOnly ? " account-deleted-composer" : "")
+              }
+              onSubmit={send}
+            >
+              {accountDeleted && (
+                <p className="account-history-warning" role="status">
+                  User account deleted.{" "}
+                  {active.accountPurgeAt
+                    ? "This chat history will be removed on " +
+                      new Date(active.accountPurgeAt).toLocaleDateString() +
+                      " (15 days after account deletion)."
+                    : "This chat history will be removed 15 days after account deletion."}
+                </p>
+              )}
+              {!accountDeleted && active.messagingBlocked && (
+                <p className="account-history-warning" role="status">
+                  {active.blockedByMe
+                    ? "You blocked this user. Unblock them from More options to chat again."
+                    : "Messaging is unavailable for this contact."}
+                </p>
+              )}
+              {editingMessage && (
+                <div className="composer-edit-banner">
+                  <Pencil size={15} />
+                  <span>Editing message</span>
+                  <button
+                    type="button"
+                    className="circlebtn"
+                    aria-label="Cancel editing"
+                    title="Cancel editing"
+                    disabled={busy}
+                    onClick={cancelEditing}
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              )}
+              {!editingMessage && (
+                <>
+                  <button
+                    type="button"
+                    className="circlebtn attach-image"
+                    aria-label="Send image"
+                    title="Send image"
+                    disabled={busy || chatReadOnly}
+                    onClick={() => chatPhotoInput.current?.click()}
+                  >
+                    <ImagePlus size={20} />
+                  </button>
+                  <input
+                    ref={chatPhotoInput}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    hidden
+                    aria-label="Choose chat image"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      event.target.value = "";
+                      if (!file || !selected) return;
+                      if (
+                        !["image/jpeg", "image/png", "image/webp"].includes(
+                          file.type,
+                        )
+                      ) {
+                        setError("Choose a JPEG, PNG or WebP image");
+                        return;
+                      }
+                      if (file.size > 12 * 1024 * 1024) {
+                        setError("Choose an image smaller than 12 MB");
+                        return;
+                      }
+                      setError("");
+                      setChatPhoto({
+                        file,
+                        chatId: selected,
+                        epoch: sessionEpoch.current,
+                      });
+                    }}
+                  />
+                </>
+              )}
               <input
-                placeholder="Write a message..."
+                ref={composerInput}
+                disabled={chatReadOnly || (!!editingMessage && busy)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape" && editingMessage) {
+                    event.preventDefault();
+                    cancelEditing();
+                  }
+                }}
+                placeholder={
+                  accountDeleted
+                    ? "User account deleted"
+                    : active.messagingBlocked
+                      ? active.blockedByMe
+                        ? "You blocked this user"
+                        : "Messaging unavailable"
+                      : editingMessage
+                        ? "Edit your message..."
+                        : "Write a message..."
+                }
                 value={compose}
                 onChange={(e) => setCompose(e.target.value)}
                 maxLength={4000}
-                aria-label="Message"
+                aria-label={editingMessage ? "Edit message text" : "Message"}
               />
               <button
                 className="sendbtn"
                 type="submit"
-                disabled={!compose.trim() || busy}
-                title="Send message"
+                disabled={
+                  chatReadOnly ||
+                  !compose.trim() ||
+                  busy ||
+                  (!!editingMessage &&
+                    compose.trim() === editingMessage.message.content)
+                }
+                aria-label={
+                  editingMessage ? "Save message changes" : "Send message"
+                }
+                title={editingMessage ? "Save changes" : "Send message"}
               >
-                <Send size={19} />
+                {editingMessage ? <Check size={19} /> : <Send size={19} />}
               </button>
             </form>
           </>
@@ -931,7 +1653,10 @@ export default function Messenger() {
               <MessageCircle size={48} />
             </span>
             <h2>Your conversations, all in one place.</h2>
-            <p>Select a chat or search for someone to start talking.</p>
+            <p>
+              Select a recent chat or use the QR button to connect with someone
+              new.
+            </p>
             <div className="securitynote">
               <ShieldCheck size={17} /> Protected account access
             </div>
@@ -954,10 +1679,11 @@ export default function Messenger() {
             setShowProfile(false);
             restoreProfileFocus();
           }}
-          onSignOut={() => {
-            setShowProfile(false);
-            void logout();
+          onDeleted={() => {
+            expireSession();
+            setError("Your account has been deleted.");
           }}
+          onSignOut={() => setShowSignOut(true)}
           onUpdated={(updated) => {
             if (userIdRef.current !== updated._id) return;
             setMe(updated);

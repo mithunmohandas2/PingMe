@@ -28,7 +28,10 @@ export async function POST(req: Request) {
     const members = [...new Set([...users, id])];
     if (members.length < 3) return fail("Select two distinct members");
     if (
-      (await User.countDocuments({ _id: { $in: members } })) !== members.length
+      (await User.countDocuments({
+        _id: { $in: members },
+        deletedAt: null,
+      })) !== members.length
     )
       return fail("Unknown user");
     const chat = await Chat.create({
@@ -37,8 +40,8 @@ export async function POST(req: Request) {
       users: members,
       groupAdmin: id,
     });
-    await chat.populate("users", "name email image");
-    await chat.populate("groupAdmin", "name email image");
+    await chat.populate("users", "name email image deletedAt");
+    await chat.populate("groupAdmin", "name email image deletedAt");
     await publishChatUpdate(String(chat._id), members);
     return json({ data: chat }, 201);
   } catch (e) {

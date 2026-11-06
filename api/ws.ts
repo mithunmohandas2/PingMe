@@ -4,6 +4,7 @@ import Redis from "ioredis";
 import { jwtVerify } from "jose";
 import { connectDb } from "../src/lib/db";
 import { User } from "../src/lib/models";
+import { getRedisUrl } from "../src/lib/realtime";
 const server = createServer((_, res) => {
   res.writeHead(426);
   res.end("WebSocket upgrade required");
@@ -25,8 +26,9 @@ function sendStatus(socket: WebSocket) {
 function broadcastStatus() {
   for (const socket of sessions.keys()) sendStatus(socket);
 }
-if (process.env.REDIS_URL) {
-  subscriber = new Redis(process.env.REDIS_URL);
+const redisUrl = getRedisUrl();
+if (redisUrl) {
+  subscriber = new Redis(redisUrl);
   subscriber.on("ready", () => {
     subscriber!
       .subscribe("pingme:events")
@@ -111,7 +113,7 @@ server.on("upgrade", async (req, socket, head) => {
             ],
           }
         : { sessionVersion: version };
-    if (!(await User.exists({ _id: userId, ...filter }))) {
+    if (!(await User.exists({ _id: userId, deletedAt: null, ...filter }))) {
       socket.destroy();
       return;
     }

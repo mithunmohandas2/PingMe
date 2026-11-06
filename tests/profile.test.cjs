@@ -83,7 +83,11 @@ async function fixture(authorized = true) {
     findById: async () => ({ ...user }),
     findOneAndUpdate: async (filter, update) => {
       assert.equal(filter._id, id);
-      if (filter.password !== user.password) return null;
+      if (
+        (filter.password !== undefined && filter.password !== user.password) ||
+        (filter.deletedAt === null && user.deletedAt)
+      )
+        return null;
       writes++;
       Object.assign(user, update.$set);
       if (update.$inc?.sessionVersion)

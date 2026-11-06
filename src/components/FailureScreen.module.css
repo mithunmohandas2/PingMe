@@ -118,8 +118,8 @@
   align-items: center;
   justify-content: center;
   gap: 9px;
-  min-height: 46px;
-  padding: 13px 19px;
+  min-height: 36px;
+  padding: 6px 12px;
   border-radius: 12px;
   font: inherit;
   font-size: 13px;
@@ -201,5 +201,12 @@
   .primary,
   .secondary {
     width: 100%;
+  }
+}
+
+@media (max-width: 800px) {
+  .primary,
+  .secondary {
+    min-height: 40px;
   }
 }

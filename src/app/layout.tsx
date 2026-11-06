@@ -3,6 +3,7 @@ import "./fonts.css";
 import "./globals.css";
 import "./appearance.css";
 import "./profile.css";
+import "./compact.css";
 import AppControls from "@/components/AppControls";
 export const metadata: Metadata = {
   title: "Ping Me Messenger",

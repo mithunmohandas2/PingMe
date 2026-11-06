@@ -1,21 +1,66 @@
 // Browser synchronization is independent of React so reconnects and requests can
 // be coordinated without restarting the connection when the selected chat changes.
-type Socket = Pick<
-  WebSocket,
-  "onopen" | "onmessage" | "onerror" | "onclose" | "close"
->;
+type Socket = {
+  onopen: (() => void) | null;
+  onmessage: ((event: { data: unknown }) => void) | null;
+  onerror: (() => void) | null;
+  onclose: (() => void) | null;
+  close(): void;
+};
+export function createEventStream(url = "/api/events"): Socket {
+  const source = new EventSource(url);
+  const connection: Socket = {
+    onopen: null,
+    onmessage: null,
+    onerror: null,
+    onclose: null,
+    close: () => source.close(),
+  };
+  source.onopen = () => connection.onopen?.();
+  source.onmessage = (event) => connection.onmessage?.(event);
+  // Let the sync controller own reconnect/backoff rather than running two retry loops.
+  source.onerror = () => {
+    source.close();
+    connection.onerror?.();
+  };
+  return connection;
+}
+
 type Timer = ReturnType<typeof setTimeout> | number;
 type Clock = {
   setTimeout: (callback: () => void, delay: number) => Timer;
   clearTimeout: (timer: Timer) => void;
 };
 
-export function mergeMessages<T extends { _id: string; createdAt: string }>(
-  loaded: T[],
-  local: T[],
-) {
+export function mergeMessages<
+  T extends {
+    _id: string;
+    createdAt: string;
+    updatedAt?: string;
+    editedAt?: string | null;
+    deletedAt?: string | null;
+  },
+>(loaded: T[], local: T[]) {
   const messages = new Map(loaded.map((message) => [message._id, message]));
-  for (const message of local) messages.set(message._id, message);
+  const version = (message: T) =>
+    Math.max(
+      ...[
+        message.createdAt,
+        message.updatedAt,
+        message.editedAt,
+        message.deletedAt,
+      ].map((value) => Date.parse(value || "") || 0),
+    );
+  for (const message of local) {
+    const remote = messages.get(message._id);
+    if (
+      remote &&
+      ((remote.deletedAt && !message.deletedAt) ||
+        version(remote) > version(message))
+    )
+      continue;
+    messages.set(message._id, message);
+  }
   return [...messages.values()].sort(
     (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
   );
@@ -40,6 +85,7 @@ export function createChatSync(options: {
   openSocket: () => Socket;
   refresh: (chatIds?: ReadonlySet<string>) => Promise<unknown>;
   onLive: (live: boolean) => void;
+  onSessionExpired?: () => void;
   isVisible: () => boolean;
   isOnline: () => boolean;
   clock?: Clock;
@@ -167,11 +213,13 @@ export function createChatSync(options: {
           const data = JSON.parse(String(event.data));
           if (data.type === "sync:status" && typeof data.live === "boolean") {
             watchHeartbeat();
-            // A transport connection alone cannot guarantee Redis delivery.
+            // A transport connection alone does not confirm event delivery.
             const becameLive = data.live && !live;
             setLive(data.live);
             if (data.live) retries = 0;
             if (becameLive) queueRefresh(); // Catch changes missed while disconnected.
+          } else if (data.type === "session:revoke") {
+            options.onSessionExpired?.();
           } else if (
             data.type === "chat:update" &&
             typeof data.chatId === "string"

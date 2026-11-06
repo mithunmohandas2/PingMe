@@ -10,7 +10,10 @@ export async function POST(req: Request) {
     const p = schema.safeParse(await body(req));
     if (!p.success) return fail("Invalid credentials", 401);
     await connectDb();
-    const u = await User.findOne({ email: p.data.email.trim().toLowerCase() });
+    const u = await User.findOne({
+      email: p.data.email.trim().toLowerCase(),
+      deletedAt: null,
+    });
     if (!u || !(await bcrypt.compare(p.data.password, u.password)))
       return fail("Invalid credentials", 401);
     const res = json({ data: safeUser(u) });

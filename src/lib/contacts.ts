@@ -4,6 +4,7 @@ export type ContactUser = {
   email: string;
   image?: string;
   bio?: string;
+  deletedAt?: string | null;
 };
 export function contactLink(origin: string, userId: string) {
   if (!/^[a-f\d]{24}$/i.test(userId)) throw new Error("Invalid contact ID");

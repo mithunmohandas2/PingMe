@@ -377,3 +377,165 @@ html[data-theme="dark"] .profile-success {
     white-space: nowrap;
   }
 }
+
+.avatar-preview-trigger {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  border-radius: 16px;
+  flex-shrink: 0;
+}
+.photo-dialog {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 20px;
+  width: min(520px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 25px 90px #09152d66;
+}
+.photo-dialog::backdrop {
+  background: #09152dbb;
+}
+.photo-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.photo-dialog-head h3 {
+  margin: 0;
+  font-size: 17px;
+  overflow-wrap: anywhere;
+}
+.photo-dialog-head button {
+  flex-shrink: 0;
+}
+.photo-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+.photo-dialog-actions button {
+  min-height: 44px;
+}
+.photo-crop-stage {
+  position: relative;
+  width: min(100%, 44dvh);
+  aspect-ratio: 1;
+  margin: auto;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--raised);
+  touch-action: none;
+  cursor: grab;
+}
+.photo-crop-stage:active {
+  cursor: grabbing;
+}
+.photo-crop-stage::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 100px #0005;
+  pointer-events: none;
+  border: 1px solid #fff9;
+}
+.photo-crop-stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.photo-crop-stage span {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+.photo-crop-controls {
+  border: 0;
+  padding: 0;
+  margin: 16px 0 0;
+  display: grid;
+  gap: 8px;
+}
+.photo-crop-controls label {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+.photo-crop-controls input {
+  width: 100%;
+  min-width: 0;
+  accent-color: var(--accent);
+  margin: 0;
+  min-height: 28px;
+}
+.photo-preview-image {
+  display: grid;
+  place-items: center;
+  min-height: 100px;
+}
+.photo-preview-image img {
+  display: block;
+  max-width: 100%;
+  max-height: 65dvh;
+  object-fit: contain;
+  border-radius: 8px;
+}
+.photo-dialog.photo-expanded,
+.photo-dialog:fullscreen {
+  width: 100%;
+  height: 100dvh;
+  max-width: 100%;
+  max-height: 100dvh;
+  margin: 0;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+.photo-expanded .photo-preview-image,
+.photo-dialog:fullscreen .photo-preview-image {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.photo-expanded .photo-preview-image img,
+.photo-dialog:fullscreen .photo-preview-image img {
+  max-height: 100%;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+@media (max-width: 600px) {
+  .photo-dialog {
+    padding: 16px;
+  }
+  .photo-dialog-head h3 {
+    font-size: 15px;
+  }
+  .photo-crop-controls label {
+    grid-template-columns: 120px minmax(0, 1fr);
+    gap: 8px;
+  }
+}
+
+.photo-dialog-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.photo-dialog-header-actions .circlebtn {
+  width: 40px;
+  height: 40px;
+}

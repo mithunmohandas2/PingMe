@@ -24,7 +24,7 @@ export async function PATCH(req: Request) {
       return fail("Enter your current password to change your email", 400);
     }
     const updated = await User.findOneAndUpdate(
-      { _id: id, password: user.password },
+      { _id: id, deletedAt: null, password: user.password },
       { $set: { name, email, bio } },
       { new: true, runValidators: true },
     );

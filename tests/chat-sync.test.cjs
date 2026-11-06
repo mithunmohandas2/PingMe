@@ -533,3 +533,44 @@ test("navigation uses fresh online HTML and only a public reconnect page offline
     else assert.equal(response.ok, true);
   }
 });
+
+test("message reconciliation retains newer edits and never restores deleted text", () => {
+  const original = {
+    _id: "message",
+    createdAt: "2026-11-06T10:00:00Z",
+    content: "Original",
+  };
+  const edited = {
+    ...original,
+    editedAt: "2026-11-06T10:01:00Z",
+    content: "Edited",
+  };
+  const deleted = {
+    ...edited,
+    deletedAt: "2026-11-06T10:02:00Z",
+    content: "Message has been deleted",
+  };
+  assert.equal(mergeMessages([edited], [original])[0].content, "Edited");
+  assert.equal(mergeMessages([original], [edited])[0].content, "Edited");
+  assert.ok(mergeMessages([deleted], [edited])[0].deletedAt);
+  assert.ok(mergeMessages([edited], [deleted])[0].deletedAt);
+});
+
+test("session revocation from a push stream expires the current session", () => {
+  const clock = new Clock(),
+    socket = new Socket();
+  let expired = 0;
+  const sync = createChatSync({
+    openSocket: () => socket,
+    refresh: async () => {},
+    onLive: () => {},
+    onSessionExpired: () => expired++,
+    isVisible: () => true,
+    isOnline: () => true,
+    clock,
+  });
+  sync.start();
+  socket.onmessage({ data: JSON.stringify({ type: "session:revoke" }) });
+  assert.equal(expired, 1);
+  sync.stop();
+});
